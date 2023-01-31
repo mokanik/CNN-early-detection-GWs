@@ -1,0 +1,296 @@
+
+# CNN: define the cnn architecture and optimization strategy
+# define the CNN
+cnn = Sequential()
+cnn.add(BatchNormalization())
+# 1st conv. layer
+cnn.add(Conv1D(filters=16, kernel_size=8, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 2nd conv. layer
+cnn.add(Conv1D(filters=32, kernel_size=32, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 3rd conv. layer
+cnn.add(Conv1D(filters=64, kernel_size=64, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 4th conv. layer
+cnn.add(Conv1D(filters=128, kernel_size=128, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 5th conv. layer
+#cnn.add(Conv1D(filters=256, kernel_size=256, activation="relu"))
+#cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# change shape after the last conv. layer
+cnn.add(Flatten())
+# 1st dense layer
+cnn.add(Dense(units=32, activation="relu"))
+# final (output) dense layer
+cnn.add(Dense(units=1, activation="sigmoid"))
+
+# choose the optimizer
+adamax = tf.keras.optimizers.Adamax(
+    learning_rate=0.0001,
+    beta_1=0.9,
+    beta_2=0.999,
+    epsilon=1e-07)
+    #weight_decay=1e-6)
+    
+# compile the cnn
+cnn.compile(loss='binary_crossentropy', 
+              optimizer=adamax,  
+              metrics=['accuracy'])
+              
+              
+              
+"""
+# metadata:
+# by Martin Okanik, 20/01/2023
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+import keras
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras import Input
+from tensorflow.keras.layers import Dense, Activation, Conv1D, Flatten, Dropout, MaxPooling1D, BatchNormalization
+from tensorflow.keras.models import Model
+from keras.models import Sequential
+from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
+
+#==================================================================================================
+# README:
+# this script performs curriculum learning on levels [0,1,2,3,4] of the frequency signal of GWs
+
+# DATA: this script (see below in the code) expects two numpy arrays at each level:
+# X: shape = (events, channels, FT)
+# y: shape = (events,)
+# expected format and placement of these arrays:
+# X = np.load(data_path+"X_FT_GData_{}.npy".format(level)), where level is in [0,1,2,3,4]
+data_path = "FT_DATA/" #"from_dnobile/"
+# data names depend on the level of curriculum learning, they are defined inside the main for loop
+
+# MODEL: first defined in the code, then loaded and saved iteratively during curriculum learning
+# define the name and path under which the cnn model is stored:
+model_path = ""
+model_name = "curriculum_cnn2_GData10000_10epochs"
+#==================================================================================================
+
+
+# CNN: define the cnn architecture and optimization strategy
+# define the CNN
+cnn = Sequential()
+cnn.add(BatchNormalization())
+# 1st conv. layer
+cnn.add(Conv1D(filters=16, kernel_size=8, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 2nd conv. layer
+cnn.add(Conv1D(filters=32, kernel_size=32, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 3rd conv. layer
+cnn.add(Conv1D(filters=64, kernel_size=64, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 4th conv. layer
+cnn.add(Conv1D(filters=128, kernel_size=128, activation="relu"))
+cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# 5th conv. layer
+#cnn.add(Conv1D(filters=256, kernel_size=256, activation="relu"))
+#cnn.add(MaxPooling1D(pool_size=4, strides=4))
+# change shape after the last conv. layer
+cnn.add(Flatten())
+# 1st dense layer
+cnn.add(Dense(units=32, activation="relu"))
+# final (output) dense layer
+cnn.add(Dense(units=1, activation="sigmoid"))
+
+# choose the optimizer
+adamax = tf.keras.optimizers.Adamax(
+    learning_rate=0.0001,
+    beta_1=0.9,
+    beta_2=0.999,
+    epsilon=1e-07)
+    #weight_decay=1e-6)
+    
+# compile the cnn
+cnn.compile(loss='binary_crossentropy', 
+              optimizer=adamax,  
+              metrics=['accuracy'])
+
+
+
+
+
+#=======================================================================================
+# CURRICULUM LEARNING:
+
+levels = [0] #,1,2,3,4] # each succesive is harder to train on
+
+for level in levels:
+    print("\n============================================================")
+    print("Level", level)
+    
+    # unless we have just started (level==0), load cnn from the previous layer
+    if level:
+        cnn = keras.models.load_model(model_path + model_name) 
+    
+    # load data from the current level
+    X = np.load(data_path+"X_FT_GData_{}.npy".format(level)).astype("float16")
+    y = np.load(data_path+"X_FT_GLabels_{}.npy".format(level)).astype("int")
+    print("Shapes of X, y:")
+    print(np.shape(X), np.shape(y))
+    
+    # perform train-test split
+    #my_split = custom_split(X, y, test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state = 42) #my_split[1:]#
+    #indices_test = my_split[0]
+    #np.save("indices_test_{}".format(level), indices_test)
+    print("y_test:", y_test)
+    print("y_train:", y_train)
+    
+    # exchange second and third dimension to comply with keras expected array shape ("channels last")
+    X_train = np.swapaxes(X_train, 1, 2)
+    X_test = np.swapaxes(X_test, 1, 2)
+    print("Shapes of X_train, X_test, y_train, y_test:")
+    print(np.shape(X_train), np.shape(X_test), np.shape(y_train), np.shape(y_test))
+    
+    # continue training the cnn on current data
+    cnn.fit(X_train, y_train,
+          batch_size=16,
+          epochs=10,
+          verbose=1,
+          validation_split=0.25)
+    
+    # evaluate out-of-sample performance at this iteration
+    score_cnn = cnn.evaluate(X_test, y_test, verbose=0)
+    #print('Test loss:', score_cnn[0])
+    print('Test accuracy at level {}: {:.3f}'.format(level, score_cnn[1]))
+    print("==============================================================\n\n")
+    
+    # save model
+    cnn.save(model_path + model_name)
+     
+# show the architecture
+print("\n\n\n")
+cnn.summary()
+
+
+
+
+
+
+============================================================
+Level 0
+Shapes of X, y:
+(20000, 3, 29573) (20000,)
+y_test: [1 0 0 ... 0 0 1]
+y_train: [0 0 0 ... 0 0 1]
+Shapes of X_train, X_test, y_train, y_test:
+(16000, 29573, 3) (4000, 29573, 3) (16000,) (4000,)
+Epoch 1/10
+750/750 [==============================] - 695s 926ms/step - loss: 0.6943 - accuracy: 0.5023 - val_loss: 0.6918 - val_accuracy: 0.5550
+Epoch 2/10
+750/750 [==============================] - 686s 914ms/step - loss: 0.6494 - accuracy: 0.6049 - val_loss: 0.5259 - val_accuracy: 0.7368
+Epoch 3/10
+750/750 [==============================] - 1585s 2s/step - loss: 0.4644 - accuracy: 0.7749 - val_loss: 0.4474 - val_accuracy: 0.7890
+Epoch 4/10
+750/750 [==============================] - 703s 938ms/step - loss: 0.4178 - accuracy: 0.8028 - val_loss: 0.4230 - val_accuracy: 0.7945
+Epoch 5/10
+750/750 [==============================] - 922s 1s/step - loss: 0.3882 - accuracy: 0.8211 - val_loss: 0.4163 - val_accuracy: 0.8087
+Epoch 6/10
+750/750 [==============================] - 589s 785ms/step - loss: 0.3640 - accuracy: 0.8384 - val_loss: 0.4319 - val_accuracy: 0.8070
+Epoch 7/10
+750/750 [==============================] - 615s 820ms/step - loss: 0.3330 - accuracy: 0.8545 - val_loss: 0.4133 - val_accuracy: 0.8065
+Epoch 8/10
+750/750 [==============================] - 593s 790ms/step - loss: 0.3022 - accuracy: 0.8726 - val_loss: 0.4074 - val_accuracy: 0.8050
+Epoch 9/10
+750/750 [==============================] - 554s 738ms/step - loss: 0.2690 - accuracy: 0.8932 - val_loss: 0.4374 - val_accuracy: 0.8070
+Epoch 10/10
+750/750 [==============================] - 548s 730ms/step - loss: 0.2315 - accuracy: 0.9137 - val_loss: 0.4746 - val_accuracy: 0.8020
+Test accuracy at level 0: 0.799
+==============================================================
+
+
+
+============================================================
+Level 1
+Shapes of X, y:
+(20000, 3, 29573) (20000,)
+shape of y+IDs:
+ (20000, 2)
+y_test: [1 0 0 ... 0 0 1]
+y_train: [0 0 0 ... 0 0 1]
+Shapes of X_train, X_test, y_train, y_test:
+(16000, 29573, 3) (4000, 29573, 3) (16000,) (4000,)
+Epoch 1/5
+750/750 [==============================] - 767s 1s/step - loss: 0.4406 - accuracy: 0.7877 - val_loss: 0.4278 - val_accuracy: 0.7960
+Epoch 2/5
+750/750 [==============================] - 800s 1s/step - loss: 0.4027 - accuracy: 0.8109 - val_loss: 0.4173 - val_accuracy: 0.8025
+Epoch 3/5
+750/750 [==============================] - 911s 1s/step - loss: 0.3773 - accuracy: 0.8293 - val_loss: 0.4085 - val_accuracy: 0.8125
+Epoch 4/5
+750/750 [==============================] - 545s 727ms/step - loss: 0.3493 - accuracy: 0.8450 - val_loss: 0.4077 - val_accuracy: 0.8117
+Epoch 5/5
+750/750 [==============================] - 1383s 2s/step - loss: 0.3207 - accuracy: 0.8652 - val_loss: 0.4036 - val_accuracy: 0.8167
+Test accuracy at level 1: 0.820
+==============================================================
+
+
+
+============================================================
+Level 2
+Shapes of X, y:
+(20000, 3, 29573) (20000,)
+shape of y+IDs:
+ (20000, 2)
+y_test: [1 0 0 ... 0 0 1]
+y_train: [0 0 0 ... 0 0 1]
+Shapes of X_train, X_test, y_train, y_test:
+(16000, 29573, 3) (4000, 29573, 3) (16000,) (4000,)
+Epoch 1/5
+750/750 [==============================] - 771s 1s/step - loss: 0.4222 - accuracy: 0.8002 - val_loss: 0.3959 - val_accuracy: 0.8170
+Epoch 2/5
+750/750 [==============================] - 682s 909ms/step - loss: 0.3892 - accuracy: 0.8248 - val_loss: 0.3956 - val_accuracy: 0.8173
+Epoch 3/5
+750/750 [==============================] - 788s 1s/step - loss: 0.3697 - accuracy: 0.8337 - val_loss: 0.3927 - val_accuracy: 0.8173
+Epoch 4/5
+750/750 [==============================] - 854s 1s/step - loss: 0.3464 - accuracy: 0.8493 - val_loss: 0.3918 - val_accuracy: 0.8127
+Epoch 5/5
+750/750 [==============================] - 846s 1s/step - loss: 0.3185 - accuracy: 0.8662 - val_loss: 0.3941 - val_accuracy: 0.8170
+Test accuracy at level 2: 0.795
+==============================================================
+
+
+
+
+
+Model: "sequential"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+batch_normalization (BatchNo (None, 29573, 3)          12        
+_________________________________________________________________
+conv1d (Conv1D)              (None, 29566, 16)         400       
+_________________________________________________________________
+max_pooling1d (MaxPooling1D) (None, 7391, 16)          0         
+_________________________________________________________________
+conv1d_1 (Conv1D)            (None, 7360, 32)          16416     
+_________________________________________________________________
+max_pooling1d_1 (MaxPooling1 (None, 1840, 32)          0         
+_________________________________________________________________
+conv1d_2 (Conv1D)            (None, 1777, 64)          131136    
+_________________________________________________________________
+max_pooling1d_2 (MaxPooling1 (None, 444, 64)           0         
+_________________________________________________________________
+conv1d_3 (Conv1D)            (None, 317, 128)          1048704   
+_________________________________________________________________
+max_pooling1d_3 (MaxPooling1 (None, 79, 128)           0         
+_________________________________________________________________
+flatten (Flatten)            (None, 10112)             0         
+_________________________________________________________________
+dense (Dense)                (None, 32)                323616    
+_________________________________________________________________
+dense_1 (Dense)              (None, 1)                 33        
+=================================================================
+Total params: 1,520,317
+Trainable params: 1,520,311
+Non-trainable params: 6
+_________________________________________________________________
+"""
